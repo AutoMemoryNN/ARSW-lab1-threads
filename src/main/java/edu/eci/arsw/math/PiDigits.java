@@ -1,113 +1,83 @@
 package edu.eci.arsw.math;
 
-///  <summary>
-///  An implementation of the Bailey-Borwein-Plouffe formula for calculating hexadecimal
-///  digits of pi.
-///  https://en.wikipedia.org/wiki/Bailey%E2%80%93Borwein%E2%80%93Plouffe_formula
-///  *** Translated from C# code: https://github.com/mmoroney/DigitsOfPi ***
-///  </summary>
+import java.util.ArrayList;
+import java.util.List;
+import edu.eci.arsw.threads.*;
+
 public class PiDigits {
+    private static List<PiDigitsThreads> threadList = new ArrayList<>();
+    private static byte[] digitArray;
 
-    private static int DigitsPerSum = 8;
-    private static double Epsilon = 1e-17;
-
-    
     /**
-     * Returns a range of hexadecimal digits of pi.
-     * @param start The starting location of the range.
-     * @param count The number of digits to return
-     * @return An array containing the hexadecimal digits.
+     * Computes Pi digits using multiple threads.
+     *
+     * @param startIndex The starting index.
+     * @param digitCount The number of digits to compute.
+     * @param threadCount The number of threads to use.
+     * @return A byte array containing the computed Pi digits.
      */
-    public static byte[] getDigits(int start, int count) {
-        if (start < 0) {
-            throw new RuntimeException("Invalid Interval");
+    public static byte[] getDigits(int startIndex, int digitCount, int threadCount) {
+        int digitsPerThread = digitCount / threadCount;
+        digitArray = new byte[digitCount];
+        int extra = digitCount % threadCount;
+
+        threadList.add(new PiDigitsThreads(startIndex, digitsPerThread + extra));
+        threadCount--;
+        startIndex += extra;
+
+        for (int i = 0; i < threadCount; i++) {
+            threadList.add(new PiDigitsThreads(startIndex + digitsPerThread, digitsPerThread));
+            startIndex += digitsPerThread;
         }
 
-        if (count < 0) {
-            throw new RuntimeException("Invalid Interval");
-        }
+        for (Thread t : threadList) t.start();
 
-        byte[] digits = new byte[count];
-        double sum = 0;
-
-        for (int i = 0; i < count; i++) {
-            if (i % DigitsPerSum == 0) {
-                sum = 4 * sum(1, start)
-                        - 2 * sum(4, start)
-                        - sum(5, start)
-                        - sum(6, start);
-
-                start += DigitsPerSum;
-            }
-
-            sum = 16 * (sum - Math.floor(sum));
-            digits[i] = (byte) sum;
-        }
-
-        return digits;
-    }
-
-    /// <summary>
-    /// Returns the sum of 16^(n - k)/(8 * k + m) from 0 to k.
-    /// </summary>
-    /// <param name="m"></param>
-    /// <param name="n"></param>
-    /// <returns></returns>
-    private static double sum(int m, int n) {
-        double sum = 0;
-        int d = m;
-        int power = n;
-
-        while (true) {
-            double term;
-
-            if (power > 0) {
-                term = (double) hexExponentModulo(power, d) / d;
-            } else {
-                term = Math.pow(16, power) / d;
-                if (term < Epsilon) {
-                    break;
+        try {
+            int index = 0;
+            for (PiDigitsThreads t : threadList) {
+                t.join();
+                for (byte b : t.getDigitsPi()) {
+                    digitArray[index++] = b;
                 }
             }
-
-            sum += term;
-            power--;
-            d += 8;
+        } catch (Exception e) {
+            System.out.println("Error in thread execution");
         }
-
-        return sum;
+        return digitArray;
     }
 
-    /// <summary>
-    /// Return 16^p mod m.
-    /// </summary>
-    /// <param name="p"></param>
-    /// <param name="m"></param>
-    /// <returns></returns>
-    private static int hexExponentModulo(int p, int m) {
-        int power = 1;
-        while (power * 2 <= p) {
-            power *= 2;
+    /**
+     * Computes Pi digits using a single thread.
+     *
+     * @param startIndex The starting index.
+     * @param digitCount The number of digits to compute.
+     * @return A byte array containing the computed Pi digits.
+     */
+    public byte[] computeDigits(int startIndex, int digitCount) {
+        PiDigitsThreads thread = new PiDigitsThreads(startIndex, digitCount);
+        thread.start();
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
-
-        int result = 1;
-
-        while (power > 0) {
-            if (p >= power) {
-                result *= 16;
-                result %= m;
-                p -= power;
-            }
-
-            power /= 2;
-
-            if (power > 0) {
-                result *= result;
-                result %= m;
-            }
-        }
-
-        return result;
+        return thread.getDigitsPi();
     }
 
+    /**
+     * Main method to test Pi digit computation.
+     *
+     * @param args Command-line arguments.
+     */
+    public static void main(String[] args) {
+        PiDigits piDigits = new PiDigits();
+        int startIndex = 0;
+        int digitCount = 1_000_000; // One million digits
+
+        long startTime = System.currentTimeMillis();
+        byte[] digits = piDigits.computeDigits(startIndex, digitCount);
+        long endTime = System.currentTimeMillis();
+
+        System.out.println("Execution time with a single thread: " + (endTime - startTime) + " ms");
+    }
 }
